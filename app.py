@@ -6,9 +6,20 @@ from groq import Groq
 # Load API keys safely
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 SERPER_API_KEY = os.getenv("SERPER_API_KEY")
+TAVILY_API_KEY = os.getenv("TAVILY_API_KEY")
+SEARCH_PROVIDER = os.getenv("SEARCH_PROVIDER", "serper").lower()
 
-if not GROQ_API_KEY or not SERPER_API_KEY:
-    raise ValueError("Missing API keys. Please add them in Hugging Face Space Secrets.")
+if not GROQ_API_KEY:
+    raise ValueError("Missing GROQ_API_KEY. Please add it in Hugging Face Space Secrets.")
+
+if SEARCH_PROVIDER == "tavily":
+    if not TAVILY_API_KEY:
+        raise ValueError("Missing TAVILY_API_KEY. Please add it in Hugging Face Space Secrets.")
+    from tavily import TavilyClient
+    tavily_client = TavilyClient(api_key=TAVILY_API_KEY)
+else:
+    if not SERPER_API_KEY:
+        raise ValueError("Missing SERPER_API_KEY. Please add it in Hugging Face Space Secrets.")
 
 client = Groq(api_key=GROQ_API_KEY)
 
@@ -39,8 +50,31 @@ def search_google(query):
     return formatted_results
 
 
+def search_tavily(query):
+    response = tavily_client.search(
+        query=query,
+        max_results=3,
+        search_depth="basic"
+    )
+
+    results = response.get("results", [])[:3]
+
+    formatted_results = ""
+    for i, r in enumerate(results, 1):
+        formatted_results += (
+            f"[{i}] {r.get('title')}\n"
+            f"{r.get('content')}\n"
+            f"Source: {r.get('url')}\n\n"
+        )
+
+    return formatted_results
+
+
 def ask_agent(question, history):
-    search_results = search_google(question)
+    if SEARCH_PROVIDER == "tavily":
+        search_results = search_tavily(question)
+    else:
+        search_results = search_google(question)
 
     prompt = f"""
 You are an expert AI research assistant.
@@ -76,7 +110,7 @@ Format nicely using markdown.
 demo = gr.ChatInterface(
     fn=ask_agent,
     title="🔎 AI Research Assistant",
-    description="Live Google-powered AI using Groq + Serper"
+    description="Live AI Research Assistant powered by Groq + Serper/Tavily"
 )
 
 if __name__ == "__main__":
